@@ -1,0 +1,56 @@
+services:
+  db:
+    image: cockroachdb/cockroach:latest
+    ports:
+      - "26257:26257"
+      - "8081:8080"
+    command: start-single-node --insecure --advertise-addr=db --http-addr=0.0.0.0
+    volumes:
+      - cockroachdb_data:/cockroach/cockroach-data
+      - ./cockroach-init:/docker-entrypoint-initdb.d
+    networks:
+      - stockify-network
+    healthcheck:
+      test: ["CMD", "cockroach", "node", "status", "--insecure", "--host=db:26257"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "3030:80"
+    env_file:
+      - ./backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - stockify-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/health || exit 1"]
+      interval: 60s
+      timeout: 5s
+      retries: 5
+      start_period: 300s
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_APP_API_BASE_URL: ${VITE_APP_API_BASE_URL}
+    ports:
+      - "3000:80"
+    env_file:
+      - ./frontend/.env
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - stockify-network
+
+volumes:
+  cockroachdb_data:
+networks:
+  stockify-network:
